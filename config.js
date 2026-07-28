@@ -2,18 +2,20 @@
 //
 // Responses are sent by the first route below that is filled in.
 //
-//   formsubmit : automatic email. No signup. Needs one activation click,
-//                triggered by your own first test submission.
-//   web3forms  : automatic email, more reliable. Free access key from
-//                web3forms.com — paste it here to use this instead.
-//   endpoint   : Apps Script URL. Writes straight into your Google Sheet
-//                and is the only route that collects everything in one place.
-//   email      : fallback only. If every route above fails, the survey shows
-//                a code and a "send it yourself" button pointed here.
+//   formsubmit : automatic email via FormSubmit. The value is an alias token,
+//                so your real address never appears in this public file.
+//   web3forms  : alternative automatic email. Free key from web3forms.com.
+//                Fill this in and it takes priority over formsubmit.
+//   endpoint   : Apps Script URL. Writes into your Google Sheet and is the
+//                only route that collects everything in one place.
+//   email      : optional. Only used if every route above fails — adds a
+//                one-click "email it yourself" button to the fallback screen.
+//                Leave blank to keep your address out of this file entirely;
+//                people then get a copy-the-code button instead.
 
 window.BY_CONFIG = {
-  formsubmit: "camila.boatyard@gmail.com",
+  formsubmit: "a61e37cf65202b997aee16904e015c51",
   web3forms:  "",
-  endpoint:   "PASTE_YOUR_EXEC_URL_HERE",
-  email:      "camila.boatyard@gmail.com"
+  endpoint:   "https://script.google.com/macros/s/AKfycbwKipztdV37vvvpNn1cvQ1Tcs_77hoLqIEH-MOIu--BA2JlctX-Xki_Rmoi34eRKFDkqw/exec",
+  email:      ""
 };
