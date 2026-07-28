@@ -505,8 +505,10 @@ function align(s, max){ const n = s/max; if(n<0.16) return ["aligned","Aligned"]
    CONFIG — set these two values after deploying the Apps Script.
    ============================================================ */
 const CONFIG = {
-  endpoint: (window.BY_CONFIG && window.BY_CONFIG.endpoint) || "PASTE_YOUR_EXEC_URL_HERE",
-  email:    (window.BY_CONFIG && window.BY_CONFIG.email) || "",
+  endpoint:   (window.BY_CONFIG && window.BY_CONFIG.endpoint) || "PASTE_YOUR_EXEC_URL_HERE",
+  web3forms:  (window.BY_CONFIG && window.BY_CONFIG.web3forms) || "",
+  formsubmit: (window.BY_CONFIG && window.BY_CONFIG.formsubmit) || "",
+  email:      (window.BY_CONFIG && window.BY_CONFIG.email) || "",
   key: "write_5ncaa860cifnbaanalyvpb4zsd"
 };
 const configured = () => CONFIG.endpoint.indexOf("script.google.com") > -1;
@@ -844,17 +846,8 @@ async function submit(){
   rec.id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
   rec.ts = Date.now();
 
-  if(configured()){
-    try{
-      await fetch(CONFIG.endpoint, {
-        method:"POST", mode:"no-cors", redirect:"follow",
-        headers:{"Content-Type":"text/plain;charset=utf-8"},
-        body: JSON.stringify({key: CONFIG.key, row: flatten(rec)})
-      });
-      sendState = "sheet";
-    }catch(e){ sendState = "code"; }
-  } else { sendState = "code"; }
   myCode = encodeRec(rec);
+  sendState = await deliver(rec);
   lsSet(MINE_KEY, rec.id);
   submitted = true; view = "done"; render(); window.scrollTo(0,0);
 }
@@ -884,13 +877,67 @@ function downloadCode(){
   const a = document.createElement("a"); a.href=u; a.download="boatyard-"+nm+".txt"; a.click();
   setTimeout(function(){ URL.revokeObjectURL(u); }, 1500);
 }
+
+/* ---------- delivery: first configured route wins ---------- */
+async function deliver(rec){
+  const who = rec.name || rec.team || "Anonymous";
+  const fields = flatten(rec);
+
+  if(configured()){
+    try{
+      await fetch(CONFIG.endpoint, {
+        method:"POST", mode:"no-cors", redirect:"follow",
+        headers:{"Content-Type":"text/plain;charset=utf-8"},
+        body: JSON.stringify({key: CONFIG.key, row: fields})
+      });
+      return "sheet";
+    }catch(e){ /* fall through */ }
+  }
+
+  if(CONFIG.web3forms){
+    try{
+      const body = Object.assign({}, fields, {
+        access_key: CONFIG.web3forms,
+        subject: "Boatyard brand survey \u2014 " + who,
+        from_name: "Boatyard Brand Survey",
+        response_code: myCode
+      });
+      const r = await fetch("https://api.web3forms.com/submit", {
+        method:"POST", headers:{"Content-Type":"application/json", Accept:"application/json"},
+        body: JSON.stringify(body)
+      });
+      const j = await r.json();
+      if(j && (j.success === true || j.success === "true")) return "auto";
+    }catch(e){ /* fall through */ }
+  }
+
+  if(CONFIG.formsubmit && CONFIG.formsubmit.indexOf("@") > -1){
+    try{
+      const body = Object.assign({}, fields, {
+        _subject: "Boatyard brand survey \u2014 " + who,
+        _template: "table",
+        _captcha: "false",
+        response_code: myCode
+      });
+      const r = await fetch("https://formsubmit.co/ajax/" + encodeURIComponent(CONFIG.formsubmit), {
+        method:"POST", headers:{"Content-Type":"application/json", Accept:"application/json"},
+        body: JSON.stringify(body)
+      });
+      const j = await r.json();
+      if(j && (j.success === true || j.success === "true")) return "auto";
+    }catch(e){ /* fall through */ }
+  }
+
+  return "code";
+}
+
 function renderDone(){
   if(sendState === "code"){
     return `<div class="hero">
       <div class="arrows">\u25b8 \u25b8 \u25b8</div>
       <div class="eyebrow">One last step</div>
       <h1>Almost there \u2014 send this across.</h1>
-      <p>Copy the code below and paste it to Cami in Slack. It's your answers in compressed form \u2014 nothing was sent automatically.</p>
+      <p>Automatic delivery didn't go through, so your answers need a nudge. Press the email button below, or copy the code and send it to Cami however you like. Takes five seconds and nothing is lost.</p>
     </div>
     <div class="card">
       <label class="label">Your response code</label>
