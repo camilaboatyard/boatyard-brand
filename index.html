@@ -343,6 +343,7 @@ input[type=range]::-moz-range-thumb{
   </div>
   <div class="shell" id="shell"></div>
 </div>
+<script src="config.js"></script>
 <script>
 /* ============================== CONTENT ============================== */
 const ADJECTIVES = ["Reliable","Innovative","Approachable","Authoritative","Efficient","Meticulous",
@@ -504,8 +505,9 @@ function align(s, max){ const n = s/max; if(n<0.16) return ["aligned","Aligned"]
    CONFIG — set these two values after deploying the Apps Script.
    ============================================================ */
 const CONFIG = {
-  endpoint: "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE",
-  key:      "PASTE_KEY_HERE"   // survey: use WRITE_KEY  |  results: use READ_KEY
+  endpoint: (window.BY_CONFIG && window.BY_CONFIG.endpoint) || "PASTE_YOUR_EXEC_URL_HERE",
+  email:    (window.BY_CONFIG && window.BY_CONFIG.email) || "",
+  key: "write_5ncaa860cifnbaanalyvpb4zsd"
 };
 const configured = () => CONFIG.endpoint.indexOf("script.google.com") > -1;
 
@@ -529,6 +531,33 @@ function flatten(r){
   H.forEach((h,i)=>o[h] = vals[i]==null ? "" : vals[i]);
   return o;
 }
+
+/* ---------- compact response code (used when there's no endpoint) ---------- */
+function b64e(str){ return btoa(String.fromCharCode.apply(null, Array.from(new TextEncoder().encode(str)))); }
+function b64d(b){ return new TextDecoder().decode(Uint8Array.from(atob(b), c=>c.charCodeAt(0))); }
+function encodeRec(r){
+  const arr = [ r.name||"", r.team||"", r.audience||"",
+    (r.adjectives||[]).map(a=>ADJECTIVES.indexOf(a)),
+    DIALS.map(d=>r.dials[d.id]), TONE.map(t=>r.tone[t.id]),
+    ARCHETYPES.findIndex(a=>a.id===r.arch1), ARCHETYPES.findIndex(a=>a.id===r.arch2),
+    (r.brands||[]).map(b=>BRANDS.findIndex(x=>x.n===b)), r.brandOther||"",
+    [r.isnot[0].is, r.isnot[0].no, r.isnot[1].is, r.isnot[1].no],
+    r.oneLiner||"", r.never||"" ];
+  return "BY1-" + b64e(JSON.stringify(arr));
+}
+function decodeRec(code, n){
+  const a = JSON.parse(b64d(String(code).trim().replace(/^BY1-/,"")));
+  const r = { id:"code"+n, ts:Date.now()+n, name:a[0], team:a[1]||"Unspecified", audience:a[2],
+    adjectives:(a[3]||[]).map(i=>ADJECTIVES[i]).filter(Boolean), dials:{}, tone:{},
+    arch1:(ARCHETYPES[a[6]]||{}).id||null, arch2:(ARCHETYPES[a[7]]||{}).id||null,
+    brands:(a[8]||[]).map(i=>(BRANDS[i]||{}).n).filter(Boolean), brandOther:a[9]||"",
+    isnot:[{is:a[10][0]||"",no:a[10][1]||""},{is:a[10][2]||"",no:a[10][3]||""}],
+    oneLiner:a[11]||"", never:a[12]||"" };
+  DIALS.forEach((d,i)=>{ if(typeof a[4][i]==="number") r.dials[d.id]=a[4][i]; });
+  TONE.forEach((t,i)=>{ if(typeof a[5][i]==="number") r.tone[t.id]=a[5][i]; });
+  return r;
+}
+
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 
@@ -807,7 +836,7 @@ function renderForm(){
 
 
 /* ============================== SUBMIT ============================== */
-let sendState = "";
+let sendState = "", myCode = "";
 async function submit(){
   const btn = document.getElementById("submitBtn");
   if(btn){ btn.disabled = true; btn.textContent = "Sending\u2026"; }
@@ -815,7 +844,6 @@ async function submit(){
   rec.id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
   rec.ts = Date.now();
 
-  let ok = false;
   if(configured()){
     try{
       await fetch(CONFIG.endpoint, {
@@ -823,28 +851,62 @@ async function submit(){
         headers:{"Content-Type":"text/plain;charset=utf-8"},
         body: JSON.stringify({key: CONFIG.key, row: flatten(rec)})
       });
-      ok = true; sendState = "sheet";
-    }catch(e){ ok = false; }
-  }
-  if(!ok){
-    /* fallback so the page still works when previewed outside GitHub Pages */
-    const wrote = await sSet(PREFIX + rec.id, JSON.stringify(rec), true);
-    sendState = wrote ? "local" : "failed";
-    ok = wrote;
-  }
-  if(sendState === "failed"){
-    if(btn){ btn.disabled = false; btn.textContent = "Try again"; }
-    alert("Couldn't submit. Check your connection and try again \u2014 your answers are still on screen.");
-    return;
-  }
+      sendState = "sheet";
+    }catch(e){ sendState = "code"; }
+  } else { sendState = "code"; }
+  myCode = encodeRec(rec);
   lsSet(MINE_KEY, rec.id);
   submitted = true; view = "done"; render(); window.scrollTo(0,0);
 }
 
+function copyCode(){
+  const t = document.getElementById("codeBox");
+  if(!t) return;
+  t.select(); t.setSelectionRange(0, 99999);
+  let ok = false;
+  try{ ok = document.execCommand("copy"); }catch(e){}
+  if(navigator.clipboard){ navigator.clipboard.writeText(t.value).catch(function(){}); ok = true; }
+  const b = document.getElementById("copyBtn");
+  if(b) b.textContent = ok ? "Copied \u2713" : "Select the text above and copy";
+}
+function emailCode(){
+  const who = R.name ? R.name : (R.team || "response");
+  const subject = "Boatyard brand survey \u2014 " + who;
+  const body = "My answers are in the code below. Paste it into the results page.\n\n"
+    + myCode + "\n\n\u2014 " + who;
+  window.location.href = "mailto:" + encodeURIComponent(CONFIG.email)
+    + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+}
+function downloadCode(){
+  const nm = (R.name||"response").replace(/[^a-z0-9]/gi,"-").toLowerCase();
+  const blob = new Blob([myCode], {type:"text/plain"});
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href=u; a.download="boatyard-"+nm+".txt"; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(u); }, 1500);
+}
 function renderDone(){
-  const warn = sendState === "local"
-    ? `<div class="warn">Saved locally, not to the response sheet \u2014 the endpoint isn't reachable from here. If you're the facilitator, check CONFIG.endpoint.</div>` : "";
-  return `${warn}<div class="hero">
+  if(sendState === "code"){
+    return `<div class="hero">
+      <div class="arrows">\u25b8 \u25b8 \u25b8</div>
+      <div class="eyebrow">One last step</div>
+      <h1>Almost there \u2014 send this across.</h1>
+      <p>Copy the code below and paste it to Cami in Slack. It's your answers in compressed form \u2014 nothing was sent automatically.</p>
+    </div>
+    <div class="card">
+      <label class="label">Your response code</label>
+      <textarea class="paste" id="codeBox" readonly style="min-height:110px">${esc(myCode)}</textarea>
+      <div class="toolbar" style="margin-top:12px">
+        ${CONFIG.email && CONFIG.email.indexOf("@")>-1
+          ? `<button class="btn btn-teal" onclick="emailCode()">Email my answers</button>` : ""}
+        <button class="btn ${CONFIG.email && CONFIG.email.indexOf("@")>-1 ? "btn-ghost" : "btn-teal"}" id="copyBtn" onclick="copyCode()">Copy to clipboard</button>
+        <button class="btn btn-ghost btn-sm" onclick="downloadCode()">Download as a file</button>
+      </div>
+      <p class="note" style="margin-top:14px">${CONFIG.email && CONFIG.email.indexOf("@")>-1
+        ? "The email button opens your mail app with everything filled in \u2014 just press Send. If nothing opens, copy the code and send it however you like."
+        : "Once it's sent you're done \u2014 you can close this tab."} Results stay sealed until everyone has responded.</p>
+    </div>`;
+  }
+  return `<div class="hero">
     <div class="arrows">\u25b8 \u25b8 \u25b8</div>
     <div class="eyebrow">Response recorded</div>
     <h1>Thanks \u2014 that's logged.</h1>
