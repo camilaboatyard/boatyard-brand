@@ -344,6 +344,12 @@ input[type=range]::-moz-range-thumb{
   display:flex;align-items:center;justify-content:space-between;gap:14px;
   padding:10px 14px;border:1px solid var(--b-primary);border-radius:var(--r-md);background:var(--subtle);
 }
+.mrow-excluded{opacity:.55;background:var(--base);}
+.mrow-badge{
+  font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:999px;background:rgba(219,77,0,.15);color:var(--warning);
+}
+.mrow-actions{display:flex;align-items:center;gap:8px;flex:none;}
 .mrow-main{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0;}
 .mrow-main b{font-size:13.5px;font-weight:600;color:var(--t-primary);}
 .mrow-team{font-size:12px;color:var(--t-quaternary);}
@@ -1400,54 +1406,87 @@ function sampleData(){
 
 let lastUpdated = null;
 
-/* ---------- manage & delete responses ---------- */
+/* ---------- manage, exclude & delete responses ----------
+   allRaw = everything the sheet returned.
+   all    = allRaw minus anything marked excluded — this is what every
+            chart, narrative, and export reads, unchanged from before.
+   Excluding is local-only (kept in this browser's localStorage) and never
+   touches the sheet. Deleting is permanent and does touch the sheet. */
+let allRaw = [];
 let showManage = false;
+const EXCLUDE_KEY = "byBP2-excluded";
+function loadExcluded(){
+  try{ return new Set(JSON.parse(localStorage.getItem(EXCLUDE_KEY) || "[]")); }
+  catch(e){ return new Set(); }
+}
+let excluded = loadExcluded();
+function saveExcluded(){
+  try{ localStorage.setItem(EXCLUDE_KEY, JSON.stringify([...excluded])); }catch(e){}
+}
+function applyExclusions(){ all = allRaw.filter(r => !excluded.has(r.id)); }
+function toggleExclude(id){
+  if(excluded.has(id)) excluded.delete(id); else excluded.add(id);
+  saveExcluded();
+  applyExclusions();
+  render();
+}
 function toggleManage(){ showManage = !showManage; render(); }
 
 function manageBlock(){
-  const n = all.length;
+  const total = allRaw.length;
+  const counted = all.length;
   const liveDelete = configured();
-  const rows = all.map((r,i)=>{
+  const rows = allRaw.map((r)=>{
     const when = r.ts ? new Date(r.ts).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"}) : "";
     const canDelete = liveDelete && r._row;
-    return `<div class="mrow">
+    const isOut = excluded.has(r.id);
+    return `<div class="mrow ${isOut ? "mrow-excluded" : ""}">
       <div class="mrow-main">
         <b>${esc(r.name || "Anonymous")}</b>
         <span class="mrow-team">${esc(r.team || "")}</span>
         ${when ? `<span class="mrow-time">${esc(when)}</span>` : ""}
+        ${isOut ? `<span class="mrow-badge">Excluded</span>` : ""}
       </div>
       <div class="mrow-sub">${(r.adjectives||[]).slice(0,3).map(esc).join(", ")}${r.arch1 ? " · " + esc(archName(r.arch1)) : ""}</div>
-      ${canDelete
-        ? `<button class="btn btn-danger btn-sm" onclick="deleteResponse(${r._row}, ${i})">Delete</button>`
-        : `<span class="mrow-nodel" title="${liveDelete ? "This response wasn't loaded from the live sheet, so it can't be deleted from here." : "Connect to the live sheet (⚙) to enable deleting."}">Delete unavailable</span>`}
+      <div class="mrow-actions">
+        <button class="btn ${isOut ? "btn-primary" : "btn-ghost"} btn-sm" onclick="toggleExclude('${r.id}')">${isOut ? "Include again" : "Exclude"}</button>
+        ${canDelete
+          ? `<button class="btn btn-danger btn-sm" onclick="deleteResponse('${r.id}')">Delete</button>`
+          : `<span class="mrow-nodel" title="${liveDelete ? "This response wasn't loaded from the live sheet, so it can't be deleted from here." : "Connect to the live sheet to enable deleting."}">Delete unavailable</span>`}
+      </div>
     </div>`;
   }).join("");
 
   return `<div class="card managecard">
     <div class="manage-head" onclick="toggleManage()">
-      <h3 class="h-sec" style="margin:0">Manage responses <span class="note" style="font-weight:500">(${n})</span></h3>
+      <h3 class="h-sec" style="margin:0">Manage responses <span class="note" style="font-weight:500">(${counted} counted${total!==counted ? ", " + (total-counted) + " excluded" : ""})</span></h3>
       <span class="manage-toggle">${showManage ? "Hide \u2212" : "Show +"}</span>
     </div>
     ${showManage ? `
       <p class="note" style="margin:10px 0 14px">
-        ${liveDelete ? "Deleting removes the row from your Google Sheet permanently \\u2014 useful for clearing out your own test submissions." : "You're viewing data that wasn't loaded live from the sheet (sample, pasted CSV, or codes), so nothing here can be deleted. Load from the sheet via \\u2699 to manage real responses."}
+        <strong>Exclude</strong> keeps a response on record but leaves it out of every chart and the narrative \u2014 useful for your own test runs. It's reversible and only affects what you see in this browser.<br>
+        <strong>Delete</strong> permanently removes the row from the Google Sheet.
       </p>
       <div class="mlist">${rows}</div>
     ` : ""}
   </div>`;
 }
 
-async function deleteResponse(rowNum, idx){
+async function deleteResponse(id){
+  const r = allRaw.find(x => x.id === id);
+  if(!r) return;
   if(!confirm("Delete this response? It will be permanently removed from the sheet.")) return;
   try{
     const res = await fetch(CONFIG.endpoint, {
       method:"POST", redirect:"follow",
       headers:{"Content-Type":"text/plain;charset=utf-8"},
-      body: JSON.stringify({ action:"delete", key: CONFIG.key, row: rowNum })
+      body: JSON.stringify({ action:"delete", key: CONFIG.key, row: r._row })
     });
     const j = await res.json();
     if(j && j.ok){
-      all.splice(idx, 1);
+      allRaw = allRaw.filter(x => x.id !== id);
+      excluded.delete(id); saveExcluded();
+      applyExclusions();
       render();
     } else {
       alert("Couldn't delete: " + (j && j.error ? j.error : "unknown error"));
@@ -1654,7 +1693,7 @@ async function loadRemote(silent){
     const j = await res.json();
     if(j && j.error) throw new Error(j.error);
     const {rows} = mapObjects(j.rows || j);
-    all = rows; loading = false; lastUpdated = Date.now();
+    allRaw = rows; applyExclusions(); loading = false; lastUpdated = Date.now();
     render();
   }catch(e){
     loading = false;
