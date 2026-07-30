@@ -87,6 +87,12 @@ html,body{margin:0;padding:0;background:#f1f5f9;}
   font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;
   text-transform:uppercase;color:var(--teal);margin-bottom:12px;
 }
+.hero-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;}
+.time-pill{
+  font-size:11px;font-weight:600;letter-spacing:.02em;color:#fff;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);
+  padding:4px 12px;border-radius:999px;white-space:nowrap;
+}
 .hero h1{
   font-size:32px;line-height:40px;font-weight:600;color:#fff;margin:0 0 12px;
 }
@@ -645,7 +651,10 @@ function renderProgress(){
 function stepIntro(){
   return `<div class="hero">
     <div class="arrows">▸ ▸ ▸</div>
-    <div class="eyebrow">Brand Definition Workshop</div>
+    <div class="hero-top">
+      <div class="eyebrow" style="margin-bottom:0">Brand Definition Workshop</div>
+      <span class="time-pill">~5 min</span>
+    </div>
     <h1>What kind of company is Boatyard?</h1>
     <p>Six short exercises to pin down our brand personality — the traits, tone, and positioning that should shape everything we build and say. Answer instinctively; there are no wrong answers, and disagreement is the useful part.</p>
   </div>`;
@@ -653,8 +662,8 @@ function stepIntro(){
 
 function s0(){
   return `<div class="card">
-    <h2 class="h-step">First, a little context</h2>
-    <p class="sub" style="margin-bottom:20px">Takes about 8 minutes total.</p>
+    <h2 class="h-step">First, a little bit about you</h2>
+    <p class="sub" style="margin-bottom:20px">Just enough to see how different teams see Boatyard.</p>
     <div class="field">
       <label class="label">Your name <span style="text-transform:none;letter-spacing:0;font-weight:400">(optional — leave blank to stay anonymous)</span></label>
       <input type="text" value="${esc(R.name)}" placeholder="e.g. Cami" oninput="setF('name',this.value)">
